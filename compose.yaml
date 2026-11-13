@@ -1,0 +1,6 @@
+services:
+  sync:
+    build: .
+    image: spotify-sync
+    pull_policy: build
+    env_file: user_settings

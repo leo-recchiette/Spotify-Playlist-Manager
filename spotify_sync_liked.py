@@ -1,52 +1,45 @@
-"""
-Script per aggiungere tutti i brani delle tue playlist Spotify
-alla playlist di default "Brani che ti piacciono" (Liked Songs).
-
-Richiede: pip install spotipy
-
-Prima di eseguire, imposta le variabili SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET
-e SPOTIPY_REDIRECT_URI come variabili d'ambiente, oppure modifica i valori qui sotto.
-"""
-
 import os
 import sys
 import time
+from pathlib import Path
+
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
 
-CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID", "")
-CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET", "")
-REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8080/callback")
-
-# Scope necessari: leggere le playlist (anche collaborative/private) e modificare i Liked Songs
+REDIRECT_URI = "http://127.0.0.1:8080/callback"
 SCOPE = "playlist-read-private playlist-read-collaborative user-library-read user-library-modify"
+BATCH_SIZE = 40
+SETTINGS_FILE = Path(__file__).with_name("user_settings")
 
-# Se vuoi limitare lo script solo a certe playlist, metti qui i loro nomi esatti.
-# Lascia None per processare TUTTE le playlist dell'utente.
-PLAYLIST_NAMES_FILTER = None  # es: ["Running", "Chill", "Workout"]
 
-BATCH_SIZE = 40  # limite imposto dall'API Spotify per /me/library (save/check)
-
-# Con --dry-run lo script mostra cosa aggiungerebbe senza modificare nulla.
-DRY_RUN = "--dry-run" in sys.argv
+def load_user_settings():
+    if not SETTINGS_FILE.exists():
+        return
+    for line in SETTINGS_FILE.read_text().splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            os.environ[key.strip()] = value.strip()
 
 
 def get_client():
+    load_user_settings()
+    client_id = os.environ.get("SPOTIPY_CLIENT_ID")
+    client_secret = os.environ.get("SPOTIPY_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        sys.exit("Inserisci SPOTIPY_CLIENT_ID e SPOTIPY_CLIENT_SECRET nel file user_settings")
     auth_manager = SpotifyOAuth(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
+        client_id=client_id,
+        client_secret=client_secret,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
         cache_path=".spotify_token_cache",
+        open_browser=False,
     )
     return spotipy.Spotify(auth_manager=auth_manager)
 
 
 def get_all_user_playlists(sp, owned_only=True):
-    """Recupera le playlist dell'utente. Se owned_only=True, tiene solo
-    quelle di cui l'utente loggato è il proprietario (esclude playlist
-    seguite, editoriali Spotify, o create da altri)."""
     me = sp.current_user()
     my_id = me["id"]
 
@@ -64,7 +57,6 @@ def get_all_user_playlists(sp, owned_only=True):
 
 def get_all_track_ids_from_playlist(sp, playlist_id):
     track_ids = []
-    # Dal 2026 l'API Spotify restituisce il brano nel campo "item" (prima era "track").
     results = sp.playlist_items(
         playlist_id,
         fields="items(item(id,type,is_local)),next",
@@ -85,7 +77,6 @@ def get_all_track_ids_from_playlist(sp, playlist_id):
 
 
 def already_liked(sp, track_ids):
-    """Ritorna il set dei track_id già presenti in Liked Songs, per evitare chiamate inutili."""
     liked = set()
     for i in range(0, len(track_ids), BATCH_SIZE):
         batch = track_ids[i : i + BATCH_SIZE]
@@ -111,9 +102,6 @@ def main():
     print("Recupero le tue playlist (solo quelle create da te)...")
     playlists = get_all_user_playlists(sp, owned_only=True)
 
-    if PLAYLIST_NAMES_FILTER:
-        playlists = [p for p in playlists if p["name"] in PLAYLIST_NAMES_FILTER]
-
     print(f"Trovate {len(playlists)} playlist da processare.\n")
 
     all_track_ids = set()
@@ -138,9 +126,7 @@ def main():
     print(f"Brani già presenti nei Liked Songs: {len(liked)}")
     print(f"Brani da aggiungere: {len(to_add)}\n")
 
-    if to_add and DRY_RUN:
-        print("Modalità --dry-run: nessuna modifica effettuata.")
-    elif to_add:
+    if to_add:
         add_tracks_to_liked(sp, to_add)
         print("\nFatto! Tutti i brani sono stati aggiunti a 'Brani che ti piacciono'.")
     else:

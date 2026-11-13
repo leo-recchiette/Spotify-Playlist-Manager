@@ -5,7 +5,7 @@ import unicodedata
 from pathlib import Path
 
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyOAuth, SpotifyOauthError
 from spotipy.exceptions import SpotifyException
 
 REDIRECT_URI = "http://127.0.0.1:8080/callback"
@@ -196,7 +196,13 @@ def main():
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     if command not in COMMANDS:
         sys.exit("Specifica un comando: sync oppure sort")
-    COMMANDS[command](get_client())
+    try:
+        COMMANDS[command](get_client())
+    except SpotifyOauthError as e:
+        sys.exit(
+            f"Login non riuscito: {e.error_description or e}\n"
+            f"Incolla l'indirizzo completo che inizia con {REDIRECT_URI}?code="
+        )
 
 
 if __name__ == "__main__":

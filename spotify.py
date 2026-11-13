@@ -39,7 +39,6 @@ def get_client():
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
         cache_path=".spotify_token_cache",
-        open_browser=False,
     )
     return spotipy.Spotify(auth_manager=auth_manager)
 
@@ -199,10 +198,7 @@ def main():
     try:
         COMMANDS[command](get_client())
     except SpotifyOauthError as e:
-        sys.exit(
-            f"Login non riuscito: {e.error_description or e}\n"
-            f"Incolla l'indirizzo completo che inizia con {REDIRECT_URI}?code="
-        )
+        sys.exit(f"Login non riuscito: {e.error_description or e}")
 
 
 if __name__ == "__main__":

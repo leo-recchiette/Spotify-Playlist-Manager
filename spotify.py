@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 import spotipy
@@ -8,7 +9,11 @@ from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
 
 REDIRECT_URI = "http://127.0.0.1:8080/callback"
-SCOPE = "playlist-read-private playlist-read-collaborative user-library-read user-library-modify"
+SCOPE = (
+    "playlist-read-private playlist-read-collaborative "
+    "playlist-modify-private playlist-modify-public "
+    "user-library-read user-library-modify"
+)
 BATCH_SIZE = 40
 SETTINGS_FILE = Path(__file__).with_name("user_settings")
 
@@ -96,9 +101,42 @@ def add_tracks_to_liked(sp, track_ids):
         time.sleep(0.2)
 
 
-def main():
-    sp = get_client()
+def get_playlist_titles(sp, playlist_id):
+    titles = []
+    results = sp.playlist_items(
+        playlist_id,
+        fields="items(item(name)),next",
+        additional_types=["track", "episode"],
+    )
+    while results:
+        for entry in results["items"]:
+            titles.append((entry.get("item") or {}).get("name") or "")
+        results = sp.next(results) if results["next"] else None
+    return titles
 
+
+def title_key(title):
+    decomposed = unicodedata.normalize("NFKD", title)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+
+
+def sort_playlist(sp, playlist_id):
+    titles = get_playlist_titles(sp, playlist_id)
+    target = sorted(range(len(titles)), key=lambda k: title_key(titles[k]))
+    current = list(range(len(titles)))
+    moves = 0
+    for position, wanted in enumerate(target):
+        index = current.index(wanted, position)
+        if index == position:
+            continue
+        sp.playlist_reorder_items(playlist_id, range_start=index, insert_before=position)
+        current.insert(position, current.pop(index))
+        moves += 1
+        time.sleep(0.1)
+    return moves
+
+
+def sync_liked(sp):
     print("Recupero le tue playlist (solo quelle create da te)...")
     playlists = get_all_user_playlists(sp, owned_only=True)
 
@@ -131,6 +169,34 @@ def main():
         print("\nFatto! Tutti i brani sono stati aggiunti a 'Brani che ti piacciono'.")
     else:
         print("Nessun brano da aggiungere, tutto già sincronizzato.")
+
+
+def sort_playlists(sp):
+    print("Recupero le tue playlist (solo quelle create da te)...")
+    playlists = get_all_user_playlists(sp, owned_only=True)
+
+    print(f"Trovate {len(playlists)} playlist da ordinare.\n")
+
+    for playlist in playlists:
+        print(f"Ordino playlist: {playlist['name']}")
+        try:
+            moves = sort_playlist(sp, playlist["id"])
+        except SpotifyException as e:
+            print(f"  Saltata ({e}).")
+            continue
+        print(f"  {moves} brani spostati." if moves else "  Già in ordine.")
+
+    print("\nFatto! Playlist ordinate per titolo.")
+
+
+COMMANDS = {"sync": sync_liked, "sort": sort_playlists}
+
+
+def main():
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    if command not in COMMANDS:
+        sys.exit("Specifica un comando: sync oppure sort")
+    COMMANDS[command](get_client())
 
 
 if __name__ == "__main__":

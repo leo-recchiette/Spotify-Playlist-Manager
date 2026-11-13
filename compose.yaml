@@ -1,5 +1,5 @@
 services:
-  sync:
+  spotify:
     build: .
     image: spotify-sync
     pull_policy: build

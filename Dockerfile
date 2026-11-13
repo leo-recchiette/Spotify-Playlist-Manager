@@ -11,5 +11,5 @@ COPY --from=builder /opt/venv /opt/venv
 RUN useradd --create-home app
 USER app
 WORKDIR /home/app
-COPY spotify_sync_liked.py .
-ENTRYPOINT ["python", "spotify_sync_liked.py"]
+COPY spotify.py .
+ENTRYPOINT ["python", "spotify.py"]
